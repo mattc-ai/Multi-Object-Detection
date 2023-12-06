@@ -71,16 +71,21 @@ class MOD(nn.Module):
 
 
     def forward(self,x):
+        #[10, 3, 1088, 1920]
         x = self.conv1(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
+        #[10, 16, 362, 639]
         x = self.conv2(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
+        #[10, 32, 120, 212]
         x = self.conv3(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
+        #[10, 64, 39, 70]
         x = self.flatten(x)
+        #[10, 174720]
 
         #Bounding Box
         x_bbox = self.bbox1(x)
@@ -164,4 +169,5 @@ def test():
     print('\nPredicted:   ', ' '.join('%5s' % outputs[j] for j in range(len(labels))))
 
 
+train()
 test()
