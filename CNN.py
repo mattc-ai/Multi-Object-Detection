@@ -48,16 +48,16 @@ class Crop2WeedDataset(Dataset):
 class MOD(nn.Module):
     def __init__(self):
         super(MOD,self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3)
-        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3) 
-        self.conv3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3)
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3) 
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3)
         self.pool = nn.MaxPool2d(kernel_size=3, stride=3)
         #self.conv4 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, padding=1)
         #self.conv5 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1) 
         self.flatten = nn.Flatten()  #make multi-dimensional input one-dimensional
 
         #Bounding box layers
-        bbox_input_size = 39*70*64 #height, width, channel
+        bbox_input_size = 12*22*128 #height, width, channel
         self.bbox1 = nn.Linear(in_features=bbox_input_size, out_features=128)
         self.bbox2 = nn.Linear(in_features=128, out_features=64)
         self.bbox3 = nn.Linear(in_features=64, out_features=32)
@@ -72,6 +72,7 @@ class MOD(nn.Module):
 
     def forward(self,x):
         #[10, 3, 1088, 1920]
+        x = self.pool(x)
         x = self.conv1(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
@@ -88,10 +89,13 @@ class MOD(nn.Module):
         #[10, 174720]
 
         #Bounding Box
-        x_bbox = self.bbox1(x)
+        x_bbox = F.relu(x)
+        x_bbox = self.bbox1(x_bbox)
+        x_bbox = F.relu(x_bbox)
         x_bbox = self.bbox2(x_bbox)
+        x_bbox = F.relu(x_bbox)
         x_bbox = self.bbox3(x_bbox)
-        x_bbox = self.sigmoid(x_bbox)
+        x_bbox = F.relu(x_bbox)
         x_bbox = self.bbox4(x_bbox)
        
         #Classification
@@ -116,15 +120,15 @@ transform = transforms.Compose([
 ])
 image_data = Crop2WeedDataset("cropandweed-dataset/data/bboxes/CropOrWeed2/", "cropandweed-dataset/data/images/", test=False, transform=transform)
 #image_data = torchvision.datasets.ImageFolder("subdivided_images/", transform=transform)
-trainloader = torch.utils.data.DataLoader(image_data, batch_size=10, shuffle=True)
+trainloader = torch.utils.data.DataLoader(image_data, batch_size=14, shuffle=True)
 
 model = MOD().to(device)
 
 def train():
     criterion = nn.MSELoss() # Defining the criterion
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)# Defining the optimizer
+    optimizer = optim.Adam(model.parameters(), lr=0.001)# Defining the optimizer
 
-    for epoch in range(1):  # Looping over the dataset three times
+    for epoch in range(4):  # Looping over the dataset three times
 
         running_loss = 0.0
         for i, data in enumerate(trainloader, 0):
@@ -167,7 +171,6 @@ def test():
 
     # Printing the labels the network assigned to the input images
     print('\nPredicted:   ', ' '.join('%5s' % outputs[j] for j in range(len(labels))))
-
 
 train()
 test()
