@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
+import pandas as pd
 
 class Crop2WeedDataset(Dataset):
 
@@ -61,7 +62,10 @@ class MOD(nn.Module):
         self.bbox1 = nn.Linear(in_features=bbox_input_size, out_features=128)
         self.bbox2 = nn.Linear(in_features=128, out_features=64)
         self.bbox3 = nn.Linear(in_features=64, out_features=32)
-        self.bbox4 = nn.Linear(in_features=32, out_features=4) 
+        self.bbox4 = nn.Linear(in_features=32, out_features=4)
+        self.bbox5 = nn.Linear(in_features=128, out_features=128)
+        self.bbox6 = nn.Linear(in_features=128, out_features=128)
+        self.bbox7 = nn.Linear(in_features=128, out_features=128)
         self.sigmoid = nn.Sigmoid()
         
         #Classification layers
@@ -71,31 +75,44 @@ class MOD(nn.Module):
 
 
     def forward(self,x):
-        #[10, 3, 1088, 1920]
+
         x = self.pool(x)
+
         x = self.conv1(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
-        #[10, 16, 362, 639]
+
         x = self.conv2(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
-        #[10, 32, 120, 212]
+
         x = self.conv3(x)
         x = F.leaky_relu(x)
         x = self.pool(x)
-        #[10, 64, 39, 70]
+
         x = self.flatten(x)
-        #[10, 174720]
+
 
         #Bounding Box
-        x_bbox = F.relu(x)
+        x_bbox = F.leaky_relu(x)
         x_bbox = self.bbox1(x_bbox)
-        x_bbox = F.relu(x_bbox)
+
+        x_bbox = F.leaky_relu(x_bbox)
+        x_bbox = self.bbox5(x_bbox)
+
+        x_bbox = F.leaky_relu(x_bbox)
+        x_bbox = self.bbox6(x_bbox)
+
+        x_bbox = F.leaky_relu(x_bbox)
+        x_bbox = self.bbox7(x_bbox)
+
+        x_bbox = F.leaky_relu(x_bbox)
         x_bbox = self.bbox2(x_bbox)
-        x_bbox = F.relu(x_bbox)
+
+        x_bbox = F.leaky_relu(x_bbox)
         x_bbox = self.bbox3(x_bbox)
-        x_bbox = F.relu(x_bbox)
+
+        x_bbox = F.leaky_relu(x_bbox)
         x_bbox = self.bbox4(x_bbox)
        
         #Classification
@@ -126,9 +143,10 @@ model = MOD().to(device)
 
 def train():
     criterion = nn.MSELoss() # Defining the criterion
-    optimizer = optim.Adam(model.parameters(), lr=0.001)# Defining the optimizer
+    optimizer = optim.Adam(model.parameters(), lr=0.02)# Defining the optimizer
 
-    for epoch in range(4):  # Looping over the dataset three times
+    for epoch in range(2):  # Looping over the dataset three times
+        loss_df = pd.DataFrame(index=list(range(len(trainloader))), columns=["loss"])
 
         running_loss = 0.0
         for i, data in enumerate(trainloader, 0):
@@ -141,6 +159,7 @@ def train():
             optimizer.zero_grad() # Setting the parameter gradients to zero
             outputs = model(inputs) # Forward pass
             loss = criterion(outputs, labels)# Applying the criterion
+            loss_df.at[epoch+i, "loss"] = loss.item() if loss.item() < 1 else 1
             loss.backward() # Backward pass
             optimizer.step()  # Optimization step
 
@@ -151,6 +170,9 @@ def train():
             running_loss = 0.0
 
         torch.save(model.state_dict(), "state/model.pth")
+        xs = loss_df.plot()
+        fig = xs.get_figure()
+        fig.savefig('figure_' + str(epoch) + '.png')
 
     print('Finished Training')
 

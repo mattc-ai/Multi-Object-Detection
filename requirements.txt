@@ -5,3 +5,4 @@ tqdm>=4.63.0
 torch
 torchvision
 scikit-image
+pandas
