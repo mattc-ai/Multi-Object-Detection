@@ -37,7 +37,7 @@ class Crop2WeedDataset(Dataset):
         data = data_file.read().rstrip('\n').split(',')
         box = [int(data[0])/self.img_width, int(data[1])/self.img_height, int(data[2])/self.img_width, int(data[3])/self.img_height]
         box = np.array(box, dtype=np.float32)
-        cl = data[4]
+        cl = np.array(int(data[4]), dtype=np.float32).reshape(1)
         sample = {'image': image, 'box': box, 'class': cl}
 
         if self.transform:
@@ -49,78 +49,56 @@ class Crop2WeedDataset(Dataset):
 class MOD(nn.Module):
     def __init__(self):
         super(MOD,self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3)
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3) 
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3)
-        self.pool = nn.MaxPool2d(kernel_size=3, stride=3)
-        #self.conv4 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, padding=1)
-        #self.conv5 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, padding=1) 
-        self.flatten = nn.Flatten()  #make multi-dimensional input one-dimensional
+        self.backbone = nn.Sequential(
+            nn.Conv2d(3, 8, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=3),
+            nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=3),
+            nn.Conv2d(16, 32, kernel_size=2, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=3),
+        )
 
-        #Bounding box layers
-        bbox_input_size = 12*22*128 #height, width, channel
-        self.bbox1 = nn.Linear(in_features=bbox_input_size, out_features=128)
-        self.bbox2 = nn.Linear(in_features=128, out_features=64)
-        self.bbox3 = nn.Linear(in_features=64, out_features=32)
-        self.bbox4 = nn.Linear(in_features=32, out_features=4)
-        self.bbox5 = nn.Linear(in_features=128, out_features=128)
-        self.bbox6 = nn.Linear(in_features=128, out_features=128)
-        self.bbox7 = nn.Linear(in_features=128, out_features=128)
-        self.sigmoid = nn.Sigmoid()
-        
-        #Classification layers
-        #cl_input_size = 136*240*20 #height, width, channel
-        #self.cl1 = nn.Linear(in_features=cl_input_size, out_features=120)
-        #self.cl3 = nn.Linear(in_features=120, out_features=1) #binary 0 or 1
+        # Bounding box prediction head
+        self.bbox_head = nn.Sequential(
+            nn.Linear(32 * 10 * 18, 64),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(64, 32),
+            nn.ReLU(inplace=True),
+            nn.Linear(32, 16),
+            nn.ReLU(inplace=True),
+            nn.Linear(16, 8),
+            nn.ReLU(inplace=True),
+            nn.Linear(8, 4),
+            nn.ReLU()
+        )
+
+        self.classification_head = nn.Sequential(
+            nn.Linear(32 * 10 * 18, 256),
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 32),
+            nn.ReLU(inplace=True),
+            nn.Linear(32, 16),
+            nn.ReLU(inplace=True),
+            nn.Linear(16, 1),
+            nn.Sigmoid()
+        )
 
 
     def forward(self,x):
+        x = self.backbone(x)
+        #print(x.shape)
+        x = x.view(x.size(0), -1)
+        bbox_predictions = self.bbox_head(x)
+        classification_output = self.classification_head(x)
+        return bbox_predictions, classification_output
 
-        x = self.pool(x)
-
-        x = self.conv1(x)
-        x = F.leaky_relu(x)
-        x = self.pool(x)
-
-        x = self.conv2(x)
-        x = F.leaky_relu(x)
-        x = self.pool(x)
-
-        x = self.conv3(x)
-        x = F.leaky_relu(x)
-        x = self.pool(x)
-
-        x = self.flatten(x)
-
-
-        #Bounding Box
-        x_bbox = F.leaky_relu(x)
-        x_bbox = self.bbox1(x_bbox)
-
-        x_bbox = F.leaky_relu(x_bbox)
-        x_bbox = self.bbox5(x_bbox)
-
-        x_bbox = F.leaky_relu(x_bbox)
-        x_bbox = self.bbox6(x_bbox)
-
-        x_bbox = F.leaky_relu(x_bbox)
-        x_bbox = self.bbox7(x_bbox)
-
-        x_bbox = F.leaky_relu(x_bbox)
-        x_bbox = self.bbox2(x_bbox)
-
-        x_bbox = F.leaky_relu(x_bbox)
-        x_bbox = self.bbox3(x_bbox)
-
-        x_bbox = F.leaky_relu(x_bbox)
-        x_bbox = self.bbox4(x_bbox)
-       
-        #Classification
-        #x_class = self.cl1(x)
-        #x_class = F.leaky_relu(x_class)
-        #x_class = self.cl3(x_class)
-
-        return x_bbox
 classes = ["ave", "vwg"]
 
 device = torch.device('cpu')
@@ -133,46 +111,61 @@ if torch.cuda.is_available():
 transform = transforms.Compose([
     # you can add other transformations in this list
     transforms.ToTensor(),
-    transforms.Normalize((0, 0, 0), (1, 1, 1))
 ])
 image_data = Crop2WeedDataset("cropandweed-dataset/data/bboxes/CropOrWeed2/", "cropandweed-dataset/data/images/", test=False, transform=transform)
 #image_data = torchvision.datasets.ImageFolder("subdivided_images/", transform=transform)
-trainloader = torch.utils.data.DataLoader(image_data, batch_size=14, shuffle=True)
+trainloader = torch.utils.data.DataLoader(image_data, batch_size=32, shuffle=True)
 
 model = MOD().to(device)
+#model.load_state_dict(torch.load("state/model.pth"))
 
 def train():
-    criterion = nn.MSELoss() # Defining the criterion
-    optimizer = optim.Adam(model.parameters(), lr=0.02)# Defining the optimizer
+    num_epoch = 10
+    bbox_criterion = nn.MSELoss(reduction='sum')
+    class_criterion = nn.BCELoss(reduction='sum')
+    optimizer = optim.Adam(model.parameters(), lr=0.001)# Defining the optimizer
+    scheduler_lr = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=1, total_iters=num_epoch)
+    mean_loss = []
 
-    for epoch in range(2):  # Looping over the dataset three times
-        loss_df = pd.DataFrame(index=list(range(len(trainloader))), columns=["loss"])
+    for epoch in range(num_epoch):  # Looping over the dataset three times
+        loss_df = pd.DataFrame(index=list(range(len(trainloader))))
 
-        running_loss = 0.0
+        offset = (epoch * len(trainloader))
         for i, data in enumerate(trainloader, 0):
 
-            inputs = data["image"] # The input data is a list [inputs, labels]
-            labels = data["box"]
-            
-            inputs, labels = inputs.to(device), labels.to(device)
+            inputs = data["image"]
+            bbox_label = data["box"]
+            class_label = data["class"]
+            inputs, bbox_label, class_label = inputs.to(device), bbox_label.to(device), class_label.to(device)
 
-            optimizer.zero_grad() # Setting the parameter gradients to zero
-            outputs = model(inputs) # Forward pass
-            loss = criterion(outputs, labels)# Applying the criterion
-            loss_df.at[epoch+i, "loss"] = loss.item() if loss.item() < 1 else 1
-            loss.backward() # Backward pass
+            optimizer.zero_grad()
+            
+            bbox_out, class_out = model(inputs) # Forward pass
+            print(class_out)
+
+            bbox_loss = bbox_criterion(bbox_out, bbox_label)
+            class_loss = class_criterion(class_out, class_label)
+            total_loss = bbox_loss  + class_loss 
+
+            loss_df.at[offset+i, "loss"] = total_loss.item()# if loss.item() < 10 else 1
+            total_loss.backward() # Backward pass
             optimizer.step()  # Optimization step
 
-            running_loss += loss.item() # Updating the running loss
-
-            print('[epoch: %d, mini-batch: %d] loss: %.3f' %
-                    (epoch + 1, i + 1, running_loss))
-            running_loss = 0.0
+            print('[epoch: %d, mini-batch: %d] loss_bbox: %.3f, loss_class: %.3f' %
+                    (epoch + 1, i + 1, bbox_loss.item(), class_loss.item()))
+        
+        if epoch != 0:
+            mean_loss.append(loss_df.mean()) 
+            xs = pd.DataFrame(mean_loss).plot()
+            fig = xs.get_figure()
+            fig.savefig('figure_' + str(epoch) + '.png')
+            print(mean_loss)
+        
+        print("Learing rate:" + str(optimizer.param_groups[0]["lr"]))
+        scheduler_lr.step()
+        #test()
 
         torch.save(model.state_dict(), "state/model.pth")
-        xs = loss_df.plot()
-        fig = xs.get_figure()
-        fig.savefig('figure_' + str(epoch) + '.png')
 
     print('Finished Training')
 
@@ -180,19 +173,20 @@ def test():
     model.load_state_dict(torch.load("state/model.pth"))
     dataiter = iter(trainloader) # Iterator over the testing set
     data = next(dataiter)
-    inputs = data["image"] # The input data is a list [inputs, labels]
-    labels = data["box"]
+    inputs = data["image"]
+    bbox_label = data["box"]
+    class_label = data["class"]
 
     model.cpu()
 
-    # Printing the ground truth images and labels
-    print('GroundTruth: ', ' '.join('%5s' % labels[j] for j in range(len(labels))))
+    bbox_out, class_out = model(inputs)
 
-    outputs = model(inputs)
-    _, predicted = torch.max(outputs, 1)
+    print(bbox_out)
 
-    # Printing the labels the network assigned to the input images
-    print('\nPredicted:   ', ' '.join('%5s' % outputs[j] for j in range(len(labels))))
+    for x_bbox, x_class, y_bbox, y_class in zip(bbox_label, class_label, bbox_out, class_out):
+        print(x_bbox, x_class, y_bbox, y_class)
+
+
 
 train()
 test()
