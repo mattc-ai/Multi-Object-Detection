@@ -66,26 +66,25 @@ class MOD(nn.Module):
             nn.Linear(32 * 10 * 18, 64),
             nn.LeakyReLU(inplace=True),
             nn.Linear(64, 32),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(32, 16),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(16, 8),
-            nn.ReLU(inplace=True),
-            nn.Linear(8, 4),
-            nn.ReLU()
+            nn.LeakyReLU(inplace=True),
+            nn.Linear(8, 4)
         )
 
         self.classification_head = nn.Sequential(
             nn.Linear(32 * 10 * 18, 256),
             nn.LeakyReLU(inplace=True),
             nn.Linear(256, 128),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(128, 64),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(64, 32),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(32, 16),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Linear(16, 1),
             nn.Sigmoid()
         )
@@ -120,7 +119,7 @@ model = MOD().to(device)
 #model.load_state_dict(torch.load("state/model.pth"))
 
 def train():
-    num_epoch = 10
+    num_epoch = 12
     bbox_criterion = nn.MSELoss(reduction='sum')
     class_criterion = nn.BCELoss(reduction='sum')
     optimizer = optim.Adam(model.parameters(), lr=0.001)# Defining the optimizer
@@ -141,7 +140,7 @@ def train():
             optimizer.zero_grad()
             
             bbox_out, class_out = model(inputs) # Forward pass
-            print(class_out)
+            
 
             bbox_loss = bbox_criterion(bbox_out, bbox_label)
             class_loss = class_criterion(class_out, class_label)
@@ -151,8 +150,8 @@ def train():
             total_loss.backward() # Backward pass
             optimizer.step()  # Optimization step
 
-            print('[epoch: %d, mini-batch: %d] loss_bbox: %.3f, loss_class: %.3f' %
-                    (epoch + 1, i + 1, bbox_loss.item(), class_loss.item()))
+            print('[epoch: %d, mini-batch: %d] %.3f + %.3f = %.3f' %
+                    (epoch + 1, i + 1, bbox_loss.item(), class_loss.item(), total_loss.item()))
         
         if epoch != 0:
             mean_loss.append(loss_df.mean()) 
@@ -160,12 +159,13 @@ def train():
             fig = xs.get_figure()
             fig.savefig('figure_' + str(epoch) + '.png')
             print(mean_loss)
-        
+
+            torch.save(model.state_dict(), "state/model.pth")
+
         print("Learing rate:" + str(optimizer.param_groups[0]["lr"]))
         scheduler_lr.step()
         #test()
 
-        torch.save(model.state_dict(), "state/model.pth")
 
     print('Finished Training')
 
@@ -181,7 +181,6 @@ def test():
 
     bbox_out, class_out = model(inputs)
 
-    print(bbox_out)
 
     for x_bbox, x_class, y_bbox, y_class in zip(bbox_label, class_label, bbox_out, class_out):
         print(x_bbox, x_class, y_bbox, y_class)
