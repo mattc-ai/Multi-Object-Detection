@@ -151,16 +151,16 @@ train_data = Crop2WeedDataset("cropandweed-dataset/data/bboxes/CropOrWeed2/", "c
 test_data = Crop2WeedDataset("cropandweed-dataset/data/bboxes/CropOrWeed2/", "cropandweed-dataset/data/images/", test=True, transform=transform)
 
 trainloader = torch.utils.data.DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
-testloader = torch.utils.data.DataLoader(test_data, batch_size=32, shuffle=True)
+testloader = torch.utils.data.DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True)
 
 model = MOD(MAX_DETECTION).to(device)
-#model.load_state_dict(torch.load("state/model_11.pth"))
+model.load_state_dict(torch.load("state/model_start.pth"))
 
 def train():
     num_epoch = 12
     bbox_criterion = nn.MSELoss(reduction='sum')
     class_criterion = nn.BCELoss(reduction='sum')
-    optimizer = optim.Adam(model.parameters(), lr=0.0008)# Defining the optimizer
+    optimizer = optim.Adam(model.parameters(), lr=0.00035)# Defining the optimizer
     scheduler_lr = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=num_epoch)
     mean_loss = []
     mean_test = pd.DataFrame(index=list(range(num_epoch)))
@@ -181,7 +181,7 @@ def train():
             bbox_out, class_out = model(inputs) # Forward pass
             
 
-            bbox_loss = bbox_criterion(bbox_out.reshape(BATCH_SIZE, MAX_DETECTION, 4), bbox_label)
+            bbox_loss = bbox_criterion(bbox_out.reshape(BATCH_SIZE if i != 192 else 20, MAX_DETECTION, 4), bbox_label)
             class_loss = class_criterion(class_out, class_label)
             total_loss = bbox_loss  + class_loss 
 
@@ -213,10 +213,10 @@ def train():
     print('Finished Training')
 
 def test():
-    model.load_state_dict(torch.load("state/model_11.pth"))
+    #model.load_state_dict(torch.load("state/model_11.pth"))
     bbox_criterion = nn.MSELoss(reduction='sum')
     class_criterion = nn.BCELoss(reduction='sum')
-    dataiter = iter(trainloader)
+    dataiter = iter(testloader)
     data = next(dataiter)
     inputs = data["image"]
     bbox_label = data["bboxes"]
@@ -230,13 +230,14 @@ def test():
     #    print(x_bbox, x_class, y_bbox, y_class)
 
     #To print images with box
-    """ norm_bbox_label = []
+    '''
+    norm_bbox_label = []
     for batch in bbox_label:
         for box in batch:
             norm_bbox_label.append([box[0]*IMG_WIDTH, box[1]*IMG_HEIGHT, box[2]*IMG_WIDTH, box[3]*IMG_HEIGHT])
     
     norm_bbox_out = []
-    for i, batch in enumerate(bbox_out.reshape(10, MAX_DETECTION*4)):
+    for i, batch in enumerate(bbox_out.reshape(BATCH_SIZE, MAX_DETECTION*4)):
         norm_bbox_out.append([])
         for box in batch.reshape(MAX_DETECTION, 4):
             boxes = torchvision.ops.box_convert(torch.tensor([box[0]*IMG_WIDTH if box[0] > 0 else 0, box[1]*IMG_HEIGHT if box[1] > 0 else 0, box[2]*IMG_WIDTH if box[2] > 0 else 0, box[3]*IMG_HEIGHT if box[3] > 0 else 0]), "xyxy", "xyxy")
@@ -248,7 +249,7 @@ def test():
                 ])
         
 
-    box_label = torch.tensor(norm_bbox_label).reshape(10, MAX_DETECTION*4)
+    box_label = torch.tensor(norm_bbox_label).reshape(BATCH_SIZE, MAX_DETECTION*4)
 
     for i, image in enumerate(inputs):
         Image.fromarray(
@@ -271,10 +272,11 @@ def test():
                     )
                 )
             [0]
-        ).save("output" + str(i) +".png") """
-    
+        ).save("output" + str(i) +".png")
+    '''
     bbox_loss = bbox_criterion(bbox_out.reshape(BATCH_SIZE, MAX_DETECTION, 4), bbox_label)
     class_loss = class_criterion(class_out, class_label)
+    model.to(device)
     
     return bbox_loss + class_loss
 
