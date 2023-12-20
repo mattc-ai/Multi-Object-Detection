@@ -1,4 +1,0 @@
-train: /Users/matteocoletta/Desktop/Proj/Progetto1_DeepLearning/dataset/train
-val: /Users/matteocoletta/Desktop/Proj/Progetto1_DeepLearning/dataset/valid
-nc: 2
-names: ['crop', 'weed']
